@@ -271,7 +271,7 @@ class MEGABYTE(nn.Module):
         # take care of special case
         # where you sample from input of 0 (start token only)
 
-        tokens = repeat(self.start_tokens, 'd -> b 1 d', b = batch_size)
+        tokens = self.start_tokens.unsqueeze(0).expand(batch_size, -1, -1)
 
         for transformer in self.transformers:
             tokens = transformer(tokens)
