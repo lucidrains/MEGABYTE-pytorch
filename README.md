@@ -1,8 +1,10 @@
 <img src="./MEGABYTE.png" width="450px"></img>
 
-## MEGABYTE-pytorch
+## MEGABYTE - Pytorch
 
 Implementation of <a href="https://arxiv.org/abs/2305.07185">MEGABYTE</a>, Predicting Million-byte Sequences with Multiscale Transformers, in Pytorch
+
+<a href="https://github.com/lucidrains/simple-hierarchical-transformer">Similar independent research</a>
 
 ## Appreciation
 
@@ -27,6 +29,7 @@ model = MEGABYTE(
     depth = (6, 4),                 # number of layers for global and then local
     dim_head = 64,                  # dimension per head
     heads = 8,                      # number of attention heads
+    flash_attn = True               # use flash attention
 )
 
 x = torch.randint(0, 16000, (1, 1024, 4))
