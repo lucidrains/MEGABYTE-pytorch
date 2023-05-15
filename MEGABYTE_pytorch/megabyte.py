@@ -4,8 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 
-from einops_exts import rearrange_with_anon_dims
-from einops import rearrange, reduce, repeat
+from einops import rearrange, reduce, repeat, pack, unpack
 
 # helpers
 
@@ -14,6 +13,12 @@ def exists(val):
 
 def default(val, d):
     return val if exists(val) else d
+
+def pack_one(t, pattern):
+    return pack([t], pattern)
+
+def unpack_one(t, ps, pattern):
+    return unpack(t, ps, pattern)[0]
 
 def remainder_to_mult(num, mult):
     return (mult - num % mult) % mult
@@ -141,7 +146,6 @@ class Attention(nn.Module):
         mask = torch.ones((i, j), dtype = torch.bool, device = device).triu(j - i + 1)
         sim = sim.masked_fill(mask, mask_value)
 
-        sim = sim - sim.amax(dim = -1, keepdim = True).detach()
         attn = sim.softmax(dim = -1)
         attn = self.dropout(attn)
 
@@ -244,6 +248,7 @@ class MEGABYTE(nn.Module):
             prime = torch.empty((default_batch_size, 0), dtype = torch.long, device = device)
 
         seq = prime
+        batch = seq.shape[0]
 
         for _ in range(total_seq_len - seq.shape[-1]):
             logits = self.forward(seq)[:, -1]
@@ -251,7 +256,7 @@ class MEGABYTE(nn.Module):
             sampled = gumbel_sample(logits, dim = -1, temperature = temperature)
             seq = torch.cat((seq, rearrange(sampled, 'b -> b 1')), dim = -1)
 
-        return rearrange_with_anon_dims(seq, 'b (...d) -> b ...d', d = self.max_seq_len)
+        return seq.reshape(batch, *self.max_seq_len)
 
     def forward_empty(self, batch_size):
         # take care of special case
@@ -265,6 +270,8 @@ class MEGABYTE(nn.Module):
         return self.to_logits(tokens)
 
     def forward(self, ids, return_loss = False):
+        batch = ids.shape[0]
+
         assert ids.ndim in {2, self.stages + 1}
         flattened_dims = ids.ndim == 2
         ids_orig_ndim = ids.ndim
@@ -279,7 +286,7 @@ class MEGABYTE(nn.Module):
             multiple_of = reduce_mult(self.max_seq_len[1:])
             padding = remainder_to_mult(seq_len, multiple_of)
             ids = F.pad(ids, (0, padding), value = self.pad_id)
-            ids = rearrange_with_anon_dims(ids, 'b (l ...d) -> b l ...d', d = self.max_seq_len[1:])
+            ids = ids.reshape(batch, -1, *self.max_seq_len[1:])
 
         b, *prec_dims, device = *ids.shape, ids.device
 
@@ -322,11 +329,9 @@ class MEGABYTE(nn.Module):
                 stage_tokens,
             ), dim = -2)
 
-            *prec_dims, _, _ = stage_tokens.shape
-
-            stage_tokens = rearrange(stage_tokens, '... n d -> (...) n d')
+            stage_tokens, ps = pack_one(stage_tokens, '* n d')
             attended = transformer(stage_tokens)
-            attended = rearrange_with_anon_dims(attended, '(...b) n d -> ...b n d', b = prec_dims)
+            attended = unpack_one(attended, ps, '* n d')
 
             start_tokens = rearrange(attended[..., :-1, :], '... n d -> ... n 1 d')
 

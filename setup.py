@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'MEGABYTE-pytorch',
   packages = find_packages(),
-  version = '0.0.1',
+  version = '0.0.2',
   license='MIT',
   description = 'MEGABYTE - Pytorch',
   long_description_content_type = 'text/markdown',
@@ -17,7 +17,6 @@ setup(
   ],
   install_requires=[
     'einops>=0.6.1',
-    'einops-exts',
     'torch>=1.10'
   ],
   classifiers=[
