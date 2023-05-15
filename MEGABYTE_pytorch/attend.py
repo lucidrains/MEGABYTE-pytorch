@@ -101,6 +101,7 @@ class Attend(nn.Module):
             if exists(mask):
                 attn_bias = attn_bias.masked_fill(~mask, mask_value)
 
+            mask = attn_bias
             causal = False
 
         # pytorch 2.0 flash attn: q, k, v, mask, dropout, causal, softmax_scale
