@@ -8,6 +8,8 @@ from torch import nn, einsum
 from einops import rearrange, reduce, repeat, pack, unpack
 from einops.layers.torch import Rearrange
 
+from MEGABYTE_pytorch.attend import Attend
+
 # helpers
 
 def exists(val):
@@ -117,12 +119,19 @@ class Attention(nn.Module):
         dim,
         dim_head = 64,
         heads = 8,
-        dropout = 0.
+        dropout = 0.,
+        flash = False
     ):
         super().__init__()
         self.scale = dim_head ** -0.5
         self.heads = heads
         inner_dim = dim_head * heads
+
+        self.attend = Attend(
+            causal = True,
+            flash = flash,
+            dropout = dropout
+        )
 
         self.dropout = nn.Dropout(dropout)
         self.norm = RMSNorm(dim)
@@ -137,21 +146,8 @@ class Attention(nn.Module):
         q, k, v = (self.to_q(x), *self.to_kv(x).chunk(2, dim = -1))
         q = rearrange(q, 'b n (h d) -> b h n d', h = h)
 
-        q = q * self.scale
-        sim = einsum('b h i d, b j d -> b h i j', q, k)
+        out = self.attend(q, k, v, attn_bias = attn_bias)
 
-        if exists(attn_bias):
-            sim = sim + attn_bias
-
-        i, j = sim.shape[-2:]
-        mask_value = -torch.finfo(sim.dtype).max
-        mask = torch.ones((i, j), dtype = torch.bool, device = device).triu(j - i + 1)
-        sim = sim.masked_fill(mask, mask_value)
-
-        attn = sim.softmax(dim = -1)
-        attn = self.dropout(attn)
-
-        out = einsum('b h i j, b j d -> b h i d', attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
 
@@ -166,7 +162,8 @@ class Transformer(nn.Module):
         attn_dropout = 0.,
         ff_dropout = 0.,
         ff_mult = 4,
-        rel_pos_bias = True
+        rel_pos_bias = True,
+        flash_attn = False
     ):
         super().__init__()
         self.alibi = Alibi(heads = heads) if rel_pos_bias else None
@@ -174,7 +171,7 @@ class Transformer(nn.Module):
 
         for _ in range(layers):
             self.layers.append(nn.ModuleList([
-                Attention(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout),
+                Attention(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, flash = flash_attn),
                 FeedForward(dim = dim, mult = ff_mult, dropout = ff_dropout)
             ]))
 
@@ -206,7 +203,8 @@ class MEGABYTE(nn.Module):
         ff_mult = 4,
         ff_dropout = 0.,
         pad_id = 0,
-        rel_pos_bias = True
+        rel_pos_bias = True,
+        flash_attn = False
     ):
         super().__init__()
 
@@ -244,7 +242,8 @@ class MEGABYTE(nn.Module):
                 attn_dropout = attn_dropout,
                 ff_dropout = ff_dropout,
                 ff_mult = ff_mult,
-                rel_pos_bias = rel_pos_bias
+                rel_pos_bias = rel_pos_bias,
+                flash_attn = flash_attn
             ))
 
         self.to_logits = nn.Linear(dim, num_tokens)

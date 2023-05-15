@@ -68,3 +68,12 @@ sampled = model.generate(temperature = 0.9, filter_thres = 0.9) # (1, 1024, 4)
     copyright = {Creative Commons Attribution 4.0 International}
 }
 ```
+
+```bibtex
+@inproceedings{dao2022flashattention,
+    title   = {Flash{A}ttention: Fast and Memory-Efficient Exact Attention with {IO}-Awareness},
+    author  = {Dao, Tri and Fu, Daniel Y. and Ermon, Stefano and Rudra, Atri and R{\'e}, Christopher},
+    booktitle = {Advances in Neural Information Processing Systems},
+    year    = {2022}
+}
+```
