@@ -1,10 +1,12 @@
 import math
 import functools
+
 import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 
 from einops import rearrange, reduce, repeat, pack, unpack
+from einops.layers.torch import Rearrange
 
 # helpers
 
@@ -221,7 +223,15 @@ class MEGABYTE(nn.Module):
         self.start_tokens = nn.Parameter(torch.randn(dim))
 
         self.max_seq_len = max_seq_len
+
         self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, dim) for seq_len in max_seq_len])
+
+        self.patch_embedders = nn.ModuleList([nn.Sequential(
+            Rearrange('... r d -> ... (r d)'),
+            nn.LayerNorm(seq_len * dim),
+            nn.Linear(seq_len * dim, dim),
+            nn.LayerNorm(dim)
+        ) for seq_len in self.max_seq_len[1:]])
 
         self.transformers = nn.ModuleList([])
 
@@ -305,11 +315,11 @@ class MEGABYTE(nn.Module):
         tokens_at_stages = []
         reduced_tokens = tokens
 
-        for ind, pos_emb in zip(range(len(prec_dims)), reversed(self.pos_embs)):
+        for ind, pos_emb, patch_emb in zip(range(len(prec_dims)), reversed(self.pos_embs), reversed((*self.patch_embedders, None))):
             is_first = ind == 0
 
             if not is_first:
-                reduced_tokens = reduce(reduced_tokens, 'b ... r d -> b ... d', 'sum')
+                reduced_tokens = patch_emb(reduced_tokens)
 
             positions = pos_emb(torch.arange(reduced_tokens.shape[-2], device = device))
             tokens_with_position = reduced_tokens + positions

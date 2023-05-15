@@ -56,3 +56,15 @@ sampled = model.generate(temperature = 0.9, filter_thres = 0.9) # (1, 1024, 4)
     primaryClass = {cs.LG}
 }
 ```
+
+```bibtex
+@misc{https://doi.org/10.48550/arxiv.2302.01327,
+    doi     = {10.48550/ARXIV.2302.01327},
+    url     = {https://arxiv.org/abs/2302.01327},
+    author  = {Kumar, Manoj and Dehghani, Mostafa and Houlsby, Neil},
+    title   = {Dual PatchNorm},
+    publisher = {arXiv},
+    year    = {2023},
+    copyright = {Creative Commons Attribution 4.0 International}
+}
+```
