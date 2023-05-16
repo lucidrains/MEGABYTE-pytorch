@@ -10,6 +10,8 @@ from einops.layers.torch import Rearrange
 
 from MEGABYTE_pytorch.attend import Attend
 
+from tqdm import tqdm
+
 # helpers
 
 def exists(val):
@@ -259,7 +261,7 @@ class MEGABYTE(nn.Module):
         seq = prime
         batch = seq.shape[0]
 
-        for _ in range(total_seq_len - seq.shape[-1]):
+        for _ in tqdm(range(total_seq_len - seq.shape[-1])):
             logits = self.forward(seq)[:, -1]
             logits = top_k(logits, thres = filter_thres)
             sampled = gumbel_sample(logits, dim = -1, temperature = temperature)
@@ -364,4 +366,5 @@ class MEGABYTE(nn.Module):
             labels[..., 1:],
             ignore_index = self.pad_id
         )
+
         return loss

@@ -47,6 +47,14 @@ logits = model(x)
 sampled = model.generate(temperature = 0.9, filter_thres = 0.9) # (1, 1024, 4)
 ```
 
+## Test
+
+Train on character-level enwik8 with patches of size 4
+
+```bash
+$ python train.py
+```
+
 ## Citations
 
 ```bibtex
