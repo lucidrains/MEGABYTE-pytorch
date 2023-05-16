@@ -40,7 +40,8 @@ model = MEGABYTE(
     num_tokens = 256,
     dim = 512,
     depth = (6, 2),
-    max_seq_len = (1024, 4)
+    max_seq_len = (1024, 4),
+    flash_attn = True
 ).cuda()
 
 # prepare enwik8 data
