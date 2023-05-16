@@ -80,3 +80,12 @@ sampled = model.generate(temperature = 0.9, filter_thres = 0.9) # (1, 1024, 4)
     year    = {2022}
 }
 ```
+
+```bibtex
+@misc{press2021ALiBi,
+    title   = {Train Short, Test Long: Attention with Linear Biases Enable Input Length Extrapolation},
+    author  = {Ofir Press and Noah A. Smith and Mike Lewis},
+    year    = {2021},
+    url     = {https://ofir.io/train_short_test_long.pdf}
+}
+```
