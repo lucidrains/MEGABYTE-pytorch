@@ -2,9 +2,9 @@
 
 ## MEGABYTE - Pytorch
 
-Implementation of <a href="https://arxiv.org/abs/2305.07185">MEGABYTE</a>, Predicting Million-byte Sequences with Multiscale Transformers, in Pytorch
+Implementation of <a href="https://arxiv.org/abs/2305.07185">MEGABYTE</a>, Predicting Million-byte Sequences with Multiscale Transformers, in Pytorch. Took the liberty to generalize it even further so one can have multiple local models.
 
-<a href="https://github.com/lucidrains/simple-hierarchical-transformer">Similar independent research</a>
+<a href="https://github.com/lucidrains/simple-hierarchical-transformer">Similar independent research that is a further generalization</a>
 
 ## Appreciation
 
@@ -25,8 +25,8 @@ from MEGABYTE_pytorch import MEGABYTE
 model = MEGABYTE(
     num_tokens = 16000,             # number of tokens
     dim = 512,                      # transformer model dimension
-    max_seq_len = (1024, 4),        # sequence length for global and then local
-    depth = (6, 4),                 # number of layers for global and then local
+    max_seq_len = (1024, 4),        # sequence length for global and then local. this can be more than 2
+    depth = (6, 4),                 # number of layers for global and then local. this can be more than 2, but length must match the max_seq_len's
     dim_head = 64,                  # dimension per head
     heads = 8,                      # number of attention heads
     flash_attn = True               # use flash attention
