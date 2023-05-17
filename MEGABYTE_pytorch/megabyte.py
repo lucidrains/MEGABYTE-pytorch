@@ -55,6 +55,13 @@ def top_k(logits, thres = 0.5):
     probs.scatter_(1, ind, val)
     return probs
 
+# token shift, from Peng et al of RWKV
+
+def token_shift(t):
+    t, t_shift = t.chunk(2, dim = -1)
+    t_shift = F.pad(t_shift, (0, 0, 1, -1))
+    return torch.cat((t, t_shift), dim = -1)
+
 # positional bias
 
 class Alibi(nn.Module):
@@ -184,8 +191,8 @@ class Transformer(nn.Module):
         attn_bias = self.alibi(n, n, device = x.device) if exists(self.alibi) else None
 
         for attn, ff in self.layers:
-            x = attn(x, attn_bias = attn_bias) + x
-            x = ff(x) + x
+            x = attn(token_shift(x), attn_bias = attn_bias) + x
+            x = ff(token_shift(x)) + x
 
         return self.norm(x)
 

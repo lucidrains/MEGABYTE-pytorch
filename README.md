@@ -97,3 +97,16 @@ $ python train.py
     url     = {https://ofir.io/train_short_test_long.pdf}
 }
 ```
+
+```bibtex
+@software{peng_bo_2021_5196578,
+    author    = {PENG Bo},
+    title     = {BlinkDL/RWKV-LM: 0.01},
+    month     = {aug},
+    year      = {2021},
+    publisher = {Zenodo},
+    version   = {0.01},
+    doi       = {10.5281/zenodo.5196578},
+    url       = {https://doi.org/10.5281/zenodo.5196578}
+}
+```
