@@ -9,6 +9,9 @@ from torch import nn, einsum
 from einops import rearrange, reduce, repeat, pack, unpack
 from einops.layers.torch import Rearrange
 
+from beartype import beartype
+from beartype.typing import Tuple, Union
+
 from MEGABYTE_pytorch.attend import Attend
 
 from tqdm import tqdm
@@ -200,13 +203,15 @@ class Transformer(nn.Module):
 # main class
 
 class MEGABYTE(nn.Module):
+
+    @beartype
     def __init__(
         self,
         *,
         num_tokens,
-        dim,
-        depth: tuple,
-        max_seq_len: tuple,
+        dim: Union[Tuple, int],
+        depth: Tuple,
+        max_seq_len: Tuple,
         dim_head = 64,
         heads = 8,
         attn_dropout = 0.,
