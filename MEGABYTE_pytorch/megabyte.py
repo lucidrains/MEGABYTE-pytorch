@@ -1,5 +1,6 @@
 import math
 import functools
+from itertools import zip_longest
 
 import torch
 import torch.nn.functional as F
@@ -204,8 +205,8 @@ class MEGABYTE(nn.Module):
         *,
         num_tokens,
         dim,
-        depth,
-        max_seq_len,
+        depth: tuple,
+        max_seq_len: tuple,
         dim_head = 64,
         heads = 8,
         attn_dropout = 0.,
@@ -225,26 +226,32 @@ class MEGABYTE(nn.Module):
         assert len(depth) == len(max_seq_len)
 
         self.stages = len(depth)
+        dim = cast_tuple(dim, self.stages)
 
-        self.token_emb = nn.Embedding(num_tokens, dim)
-        self.start_tokens = nn.Parameter(torch.randn(dim))
+        assert len(dim) == self.stages
+
+        coarsest_dim, *_, fine_dim = dim
+
+        self.token_emb = nn.Embedding(num_tokens, fine_dim)
+        self.start_tokens = nn.Parameter(torch.randn(coarsest_dim))
 
         self.max_seq_len = max_seq_len
 
-        self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, dim) for seq_len in max_seq_len])
+        self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, h_dim) for h_dim, seq_len in zip(dim, max_seq_len)])
 
         self.patch_embedders = nn.ModuleList([nn.Sequential(
             Rearrange('... r d -> ... (r d)'),
-            nn.LayerNorm(seq_len * dim),
-            nn.Linear(seq_len * dim, dim),
-            nn.LayerNorm(dim)
-        ) for seq_len in self.max_seq_len[1:]])
+            nn.LayerNorm(seq_len * dim_in),
+            nn.Linear(seq_len * dim_in, dim_out),
+            nn.LayerNorm(dim_out)
+        ) for dim_in, dim_out, seq_len in zip(dim[1:], dim[:-1], max_seq_len[1:])])
 
         self.transformers = nn.ModuleList([])
+        self.to_next_transformer_projections = nn.ModuleList([])
 
-        for stage_depth in depth:
+        for h_dim, next_h_dim, stage_depth in zip_longest(dim, dim[1:], depth):
             self.transformers.append(Transformer(
-                dim = dim,
+                dim = h_dim,
                 layers = stage_depth,
                 dim_head = dim_head,
                 heads = heads,
@@ -255,7 +262,10 @@ class MEGABYTE(nn.Module):
                 flash_attn = flash_attn
             ))
 
-        self.to_logits = nn.Linear(dim, num_tokens)
+            proj = nn.Linear(h_dim, next_h_dim) if exists(next_h_dim) and next_h_dim != dim else nn.Identity()
+            self.to_next_transformer_projections.append(proj)
+
+        self.to_logits = nn.Linear(fine_dim, num_tokens)
         self.pad_id = pad_id
 
     def generate(self, prime = None, filter_thres = 0.9, temperature = 1., default_batch_size = 1):
@@ -339,7 +349,7 @@ class MEGABYTE(nn.Module):
 
         # spatial tokens is tokens with depth pos reduced along depth dimension + spatial positions        
 
-        for ind, (stage_tokens, transformer) in enumerate(zip(tokens_at_stages, self.transformers)):
+        for ind, (stage_tokens, transformer, proj) in enumerate(zip(tokens_at_stages, self.transformers, self.to_next_transformer_projections)):
             is_last = ind == (self.stages - 1)
 
             stage_tokens = torch.cat((
@@ -348,7 +358,10 @@ class MEGABYTE(nn.Module):
             ), dim = -2)
 
             stage_tokens, ps = pack_one(stage_tokens, '* n d')
+
             attended = transformer(stage_tokens)
+            attended = proj(attended)
+
             attended = unpack_one(attended, ps, '* n d')
 
             start_tokens = rearrange(attended[..., :-1, :], '... n d -> ... n 1 d')
