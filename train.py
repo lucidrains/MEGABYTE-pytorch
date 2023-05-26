@@ -38,7 +38,7 @@ def decode_tokens(tokens):
 
 model = MEGABYTE(
     num_tokens = 256,
-    dim = 512,
+    dim = (512, 256),
     depth = (6, 2),
     max_seq_len = (1024, 4),
     flash_attn = True
