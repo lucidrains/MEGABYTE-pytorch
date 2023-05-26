@@ -49,7 +49,7 @@ sampled = model.generate(temperature = 0.9, filter_thres = 0.9) # (1, 1024, 4)
 
 ## Test
 
-Train on character-level enwik8 with patches of size 4 - length 4096
+Train on character-level enwik8 with patches of size 4 - length 8192
 
 ```bash
 $ python train.py

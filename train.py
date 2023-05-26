@@ -17,9 +17,8 @@ GRADIENT_ACCUMULATE_EVERY = 4
 LEARNING_RATE = 2e-4
 VALIDATE_EVERY  = 100
 GENERATE_EVERY  = 500
-GENERATE_LENGTH = 1024
 PRIME_LEN = 100
-SEQ_LEN = 1024
+SEQ_LEN = 8192
 
 # helpers
 
@@ -38,9 +37,9 @@ def decode_tokens(tokens):
 
 model = MEGABYTE(
     num_tokens = 256,
-    dim = (512, 512),
-    depth = (6, 2),
-    max_seq_len = (1024, 4),
+    dim = (768, 512, 256),
+    depth = (6, 4, 2),
+    max_seq_len = (512, 4, 4),
     flash_attn = True
 ).cuda()
 
@@ -94,7 +93,7 @@ for i in tqdm.tqdm(range(NUM_BATCHES), mininterval=10., desc='training'):
             loss = model(next(val_loader), return_loss = True)
             print(f'validation loss: {loss.item()}')
 
-    if i % GENERATE_EVERY == 0:
+    if i != 0 and i % GENERATE_EVERY == 0:
         model.eval()
         inp = random.choice(val_dataset)[:-1]
         prime_inp = inp[:PRIME_LEN]
