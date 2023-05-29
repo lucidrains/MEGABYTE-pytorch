@@ -271,8 +271,8 @@ class MEGABYTE(nn.Module):
 
             if exists(next_h_dim) and next_h_dim != dim:
                 proj = nn.Sequential(
-                    nn.Linear(h_dim, next_h_dim * next_seq_len),
-                    Rearrange('... (n d) -> (...) n d', n = next_seq_len)
+                    nn.Linear(h_dim, next_h_dim * (next_seq_len + 1)),
+                    Rearrange('... (n d) -> (...) n d', n = next_seq_len + 1)
                 )
 
             self.to_next_transformer_projections.append(proj)
@@ -379,10 +379,6 @@ class MEGABYTE(nn.Module):
                 stage_tokens,
             ), dim = -2)
 
-            # omit last token
-
-            stage_tokens = stage_tokens[:, :-1]
-
             # sum the previous hierarchy's representation
 
             if exists(prev_stage_tokens_repr):
@@ -394,11 +390,13 @@ class MEGABYTE(nn.Module):
 
             # project for next stage in the hierarchy
 
-            prev_stage_tokens_repr = proj(attended)
+            prev_stage_tokens_repr = proj(attended[..., :-1, :])
 
         # project to logits
 
-        logits = self.to_logits(attended)        
+        logits = self.to_logits(attended)
+
+        logits = logits[..., 1:, :]
 
         if not return_loss:
 
