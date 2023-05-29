@@ -397,22 +397,25 @@ class MEGABYTE(nn.Module):
 
         logits = self.to_logits(attended)
 
-        logits = logits[..., 1:, :]
+        start_tokens, logits = logits[:, 0, :1, :], logits[..., 1:, :]
 
         if not return_loss:
 
             if flattened_dims:
-                logits = rearrange(logits, 'b ... n -> b (...) n')
+                logits = rearrange(logits, 'b ... c -> b (...) c')
                 logits = logits[:, :seq_len]
 
             return logits
 
-        preds = rearrange(logits, 'b ... c -> b c (...)')
+        logits = rearrange(logits, 'b ... c -> b (...) c')
+        logits = torch.cat((start_tokens, logits), dim = -2)
+
+        preds = rearrange(logits, 'b n c -> b c n')
         labels = rearrange(ids, 'b ... -> b (...)')
 
         loss = F.cross_entropy(
             preds[..., :-1],
-            labels[..., 1:],
+            labels,
             ignore_index = self.pad_id
         )
 
