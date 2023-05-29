@@ -238,10 +238,10 @@ class MEGABYTE(nn.Module):
         coarsest_dim, *_, fine_dim = dim
 
         self.token_emb = nn.Embedding(num_tokens, fine_dim)
-        self.start_tokens = nn.Parameter(torch.randn(coarsest_dim))
 
         self.max_seq_len = max_seq_len
 
+        self.start_tokens = nn.ParameterList([nn.Parameter(torch.randn(h_dim)) for h_dim, seq_len in zip(dim, max_seq_len)])
         self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, h_dim) for h_dim, seq_len in zip(dim, max_seq_len)])
 
         self.patch_embedders = nn.ModuleList([nn.Sequential(
@@ -254,7 +254,7 @@ class MEGABYTE(nn.Module):
         self.transformers = nn.ModuleList([])
         self.to_next_transformer_projections = nn.ModuleList([])
 
-        for h_dim, next_h_dim, stage_depth in zip_longest(dim, dim[1:], depth):
+        for h_dim, next_h_dim, stage_depth, next_seq_len in zip_longest(dim, dim[1:], depth, max_seq_len[1:]):
             self.transformers.append(Transformer(
                 dim = h_dim,
                 layers = stage_depth,
@@ -267,7 +267,14 @@ class MEGABYTE(nn.Module):
                 flash_attn = flash_attn
             ))
 
-            proj = nn.Linear(h_dim, next_h_dim) if exists(next_h_dim) and next_h_dim != dim else nn.Identity()
+            proj = nn.Identity()
+
+            if exists(next_h_dim) and next_h_dim != dim:
+                proj = nn.Sequential(
+                    nn.Linear(h_dim, next_h_dim * (next_seq_len + 1)),
+                    Rearrange('... (n d) -> (...) n d', n = next_seq_len + 1)
+                )
+
             self.to_next_transformer_projections.append(proj)
 
         self.to_logits = nn.Linear(fine_dim, num_tokens)
@@ -295,10 +302,16 @@ class MEGABYTE(nn.Module):
         # take care of special case
         # where you sample from input of 0 (start token only)
 
-        tokens = repeat(self.start_tokens, 'd -> b 1 d', b = batch_size)
+        prev_stage_tokens_repr = None
 
-        for transformer in self.transformers:
+        for stage_start_tokens, transformer, proj in zip(self.start_tokens, self.transformers, self.to_next_transformer_projections):
+            tokens = repeat(stage_start_tokens, 'd -> b 1 d', b = batch_size)
+
+            if exists(prev_stage_tokens_repr):
+                tokens = tokens + prev_stage_tokens_repr[..., :tokens.shape[-2], :]
+
             tokens = transformer(tokens)
+            prev_stage_tokens_repr = proj(tokens)
 
         return self.to_logits(tokens)
 
@@ -348,28 +361,38 @@ class MEGABYTE(nn.Module):
             tokens_with_position = reduced_tokens + positions
             tokens_at_stages.insert(0, tokens_with_position)
 
-        # get start tokens and append to the coarsest stage
+        # the un-pixelshuffled representations of the previous hierarchy, starts with None
 
-        start_tokens = repeat(self.start_tokens, 'f -> b 1 f', b = b)
+        prev_stage_tokens_repr = None
 
         # spatial tokens is tokens with depth pos reduced along depth dimension + spatial positions        
 
-        for ind, (stage_tokens, transformer, proj) in enumerate(zip(tokens_at_stages, self.transformers, self.to_next_transformer_projections)):
-            is_last = ind == (self.stages - 1)
+        for stage_start_tokens, stage_tokens, transformer, proj in zip(self.start_tokens, tokens_at_stages, self.transformers, self.to_next_transformer_projections):
+            stage_tokens, ps = pack_one(stage_tokens, '* n d')
+
+            stage_start_tokens = repeat(stage_start_tokens, 'f -> b 1 f', b = stage_tokens.shape[0])
+
+            # concat start token
 
             stage_tokens = torch.cat((
-                start_tokens,
+                stage_start_tokens,
                 stage_tokens,
             ), dim = -2)
 
-            stage_tokens, ps = pack_one(stage_tokens, '* n d')
+            # sum the previous hierarchy's representation
+
+            if exists(prev_stage_tokens_repr):
+                stage_tokens = stage_tokens + prev_stage_tokens_repr[..., :stage_tokens.shape[-2], :]
 
             attended = transformer(stage_tokens)
-            attended = proj(attended)
 
             attended = unpack_one(attended, ps, '* n d')
 
-            start_tokens = rearrange(attended[..., :-1, :], '... n d -> ... n 1 d')
+            # project for next stage in the hierarchy
+
+            prev_stage_tokens_repr = proj(attended[..., :-1, :])
+
+        # project to logits
 
         logits = self.to_logits(attended)
 
