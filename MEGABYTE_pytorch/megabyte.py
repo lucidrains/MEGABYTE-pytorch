@@ -397,7 +397,10 @@ class MEGABYTE(nn.Module):
 
         logits = self.to_logits(attended)
 
-        start_tokens, logits = logits[:, 0, :1, :], logits[..., 1:, :]
+        start_tokens = logits[(slice(None), *((0,) * (logits.ndim - 2)), slice(None))]
+        start_tokens = rearrange(start_tokens, 'b d -> b 1 d')
+
+        logits = logits[..., 1:, :]
 
         if not return_loss:
 
