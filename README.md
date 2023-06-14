@@ -110,3 +110,13 @@ $ python train.py
     url       = {https://doi.org/10.5281/zenodo.5196578}
 }
 ```
+
+```bibtex
+@article{Kazemnejad2023TheIO,
+    title   = {The Impact of Positional Encoding on Length Generalization in Transformers},
+    author  = {Amirhossein Kazemnejad and Inkit Padhi and Karthikeyan Natesan Ramamurthy and Payel Das and Siva Reddy},
+    journal = {ArXiv},
+    year    = {2023},
+    volume  = {abs/2305.19466}
+}
+```

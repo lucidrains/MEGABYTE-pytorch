@@ -218,7 +218,8 @@ class MEGABYTE(nn.Module):
         ff_mult = 4,
         ff_dropout = 0.,
         pad_id = 0,
-        rel_pos_bias = True,
+        rel_pos_bias = False,
+        pos_emb = False,
         flash_attn = False
     ):
         super().__init__()
@@ -242,7 +243,7 @@ class MEGABYTE(nn.Module):
         self.max_seq_len = max_seq_len
 
         self.start_tokens = nn.ParameterList([nn.Parameter(torch.randn(h_dim)) for h_dim, seq_len in zip(dim, max_seq_len)])
-        self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, h_dim) for h_dim, seq_len in zip(dim, max_seq_len)])
+        self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, h_dim) for h_dim, seq_len in zip(dim, max_seq_len)]) if pos_emb else None
 
         self.patch_embedders = nn.ModuleList([nn.Sequential(
             Rearrange('... r d -> ... (r d)'),
@@ -351,15 +352,19 @@ class MEGABYTE(nn.Module):
         tokens_at_stages = []
         reduced_tokens = tokens
 
-        for ind, pos_emb, patch_emb in zip(range(len(prec_dims)), reversed(self.pos_embs), reversed((*self.patch_embedders, None))):
+        pos_embs = default(self.pos_embs, (None,))
+
+        for ind, pos_emb, patch_emb in zip_longest(range(len(prec_dims)), reversed(pos_embs), reversed((*self.patch_embedders, None))):
             is_first = ind == 0
 
             if not is_first:
                 reduced_tokens = patch_emb(reduced_tokens)
 
-            positions = pos_emb(torch.arange(reduced_tokens.shape[-2], device = device))
-            tokens_with_position = reduced_tokens + positions
-            tokens_at_stages.insert(0, tokens_with_position)
+            if exists(pos_emb):
+                positions = pos_emb(torch.arange(reduced_tokens.shape[-2], device = device))
+                reduced_tokens = reduced_tokens + positions
+
+            tokens_at_stages.insert(0, reduced_tokens)
 
         # the un-pixelshuffled representations of the previous hierarchy, starts with None
 
