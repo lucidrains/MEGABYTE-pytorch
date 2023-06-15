@@ -231,19 +231,22 @@ class MEGABYTE(nn.Module):
 
         coarsest_dim, *_, fine_dim = dim
 
-        self.token_emb = nn.Embedding(num_tokens, fine_dim)
-
         self.max_seq_len = max_seq_len
 
         self.start_tokens = nn.ParameterList([nn.Parameter(torch.randn(h_dim)) for h_dim, seq_len in zip(dim, max_seq_len)])
         self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, h_dim) for h_dim, seq_len in zip(dim, max_seq_len)]) if pos_emb else None
 
-        self.patch_embedders = nn.ModuleList([nn.Sequential(
-            Rearrange('... r d -> ... (r d)'),
-            nn.LayerNorm(seq_len * dim_in),
-            nn.Linear(seq_len * dim_in, dim_out),
-            nn.LayerNorm(dim_out)
-        ) for dim_in, dim_out, seq_len in zip(dim[1:], dim[:-1], max_seq_len[1:])])
+        self.token_embs = nn.ModuleList([])
+        self.token_embs.append(nn.Embedding(num_tokens, fine_dim))
+
+        for dim_out, seq_len in zip(dim[:-1], max_seq_len[1:]):
+            self.token_embs.append(nn.Sequential(
+                nn.Embedding(num_tokens, fine_dim),
+                Rearrange('... r d -> ... (r d)'),
+                nn.LayerNorm(seq_len * fine_dim),
+                nn.Linear(seq_len * fine_dim, dim_out),
+                nn.LayerNorm(dim_out)
+            ))
 
         self.transformers = nn.ModuleList([])
         self.to_next_transformer_projections = nn.ModuleList([])
@@ -266,7 +269,7 @@ class MEGABYTE(nn.Module):
             if exists(next_h_dim) and next_h_dim != dim:
                 proj = nn.Sequential(
                     nn.Linear(h_dim, next_h_dim * next_seq_len),
-                    Rearrange('... (n d) -> (...) n d', n = next_seq_len)
+                    Rearrange('b m (n d) -> b (m n) d', n = next_seq_len)
                 )
 
             self.to_next_transformer_projections.append(proj)
@@ -335,29 +338,26 @@ class MEGABYTE(nn.Module):
         assert prec_dims[0] <= self.max_seq_len[0], 'the first dimension of your axial autoregressive transformer must be less than the first tuple element of max_seq_len (like any autoregressive transformer)'
         assert tuple(prec_dims[1:]) == tuple(self.max_seq_len[1:]), 'all subsequent dimensions must match exactly'
 
-        # get token embeddings
-
-        tokens = self.token_emb(ids)
-
         # get tokens for all hierarchical stages, reducing by appropriate dimensions
         # and adding the absolute positional embeddings
 
         tokens_at_stages = []
-        reduced_tokens = tokens
-
         pos_embs = default(self.pos_embs, (None,))
 
-        for ind, pos_emb, patch_emb in zip_longest(range(len(prec_dims)), reversed(pos_embs), reversed((*self.patch_embedders, None))):
-            is_first = ind == 0
-
-            if not is_first:
-                reduced_tokens = patch_emb(reduced_tokens)
+        for ind, pos_emb, token_emb in zip_longest(range(len(prec_dims)), reversed(pos_embs), reversed(self.token_embs)):
+            is_last = ind == (len(prec_dims) - 1)
+            tokens = token_emb(ids)
 
             if exists(pos_emb):
-                positions = pos_emb(torch.arange(reduced_tokens.shape[-2], device = device))
-                reduced_tokens = reduced_tokens + positions
+                positions = pos_emb(torch.arange(tokens.shape[-2], device = device))
+                tokens = tokens + positions
 
-            tokens_at_stages.insert(0, reduced_tokens)
+            tokens_at_stages.append(tokens)
+
+            if is_last:
+                continue
+
+            ids = rearrange(ids, '... m n -> ... (m n)')
 
         # the un-pixelshuffled representations of the previous hierarchy, starts with None
 
@@ -367,7 +367,6 @@ class MEGABYTE(nn.Module):
 
         for stage_start_tokens, stage_tokens, transformer, proj in zip(self.start_tokens, tokens_at_stages, self.transformers, self.to_next_transformer_projections):
             stage_tokens, ps = pack_one(stage_tokens, '* n d')
-
             stage_start_tokens = repeat(stage_start_tokens, 'f -> b 1 f', b = stage_tokens.shape[0])
 
             # concat start token
