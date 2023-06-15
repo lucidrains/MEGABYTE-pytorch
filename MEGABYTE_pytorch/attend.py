@@ -89,21 +89,6 @@ class Attend(nn.Module):
 
         config = self.cuda_config if is_cuda else self.cpu_config
 
-        causal = self.causal
-
-        # handle attention bias
-
-        if exists(attn_bias):
-            mask_value = -torch.finfo(q.dtype).max // 2
-            causal_mask = self.get_mask(q_len, k_len, device)
-            attn_bias = attn_bias.masked_fill(causal_mask, mask_value)
-
-            if exists(mask):
-                attn_bias = attn_bias.masked_fill(~mask, mask_value)
-
-            mask = attn_bias
-            causal = False
-
         # pytorch 2.0 flash attn: q, k, v, mask, dropout, causal, softmax_scale
 
         with torch.backends.cuda.sdp_kernel(**config._asdict()):
@@ -111,12 +96,12 @@ class Attend(nn.Module):
                 q, k, v,
                 attn_mask = mask,
                 dropout_p = self.dropout if self.training else 0., 
-                is_causal = causal
+                is_causal = self.causal
             )
 
         return out
 
-    def forward(self, q, k, v, mask = None, attn_bias = None):
+    def forward(self, q, k, v, mask = None):
         """
         einstein notation
         b - batch
@@ -132,16 +117,11 @@ class Attend(nn.Module):
         kv_einsum_eq = 'b j d' if k.ndim == 3 else 'b h j d'
 
         if self.flash:
-            return self.flash_attn(q, k, v, mask = mask, attn_bias = attn_bias)
+            return self.flash_attn(q, k, v, mask = mask)
 
         # similarity
 
         sim = einsum(f"b h i d, {kv_einsum_eq} -> b h i j", q, k) * scale
-
-        # attention bias
-
-        if exists(attn_bias):
-            sim = sim + attn_bias
 
         # causal mask
 
