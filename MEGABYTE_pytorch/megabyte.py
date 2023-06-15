@@ -237,14 +237,18 @@ class MEGABYTE(nn.Module):
         self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, h_dim) for h_dim, seq_len in zip(dim, max_seq_len)]) if pos_emb else None
 
         self.token_embs = nn.ModuleList([])
+
+        patch_size = 1
         self.token_embs.append(nn.Embedding(num_tokens, fine_dim))
 
-        for dim_out, seq_len in zip(dim[:-1], max_seq_len[1:]):
+        for dim_out, seq_len in zip(reversed(dim[:-1]), reversed(max_seq_len[1:])):
+            patch_size *= seq_len
+
             self.token_embs.append(nn.Sequential(
                 nn.Embedding(num_tokens, fine_dim),
                 Rearrange('... r d -> ... (r d)'),
-                nn.LayerNorm(seq_len * fine_dim),
-                nn.Linear(seq_len * fine_dim, dim_out),
+                nn.LayerNorm(patch_size * fine_dim),
+                nn.Linear(patch_size * fine_dim, dim_out),
                 nn.LayerNorm(dim_out)
             ))
 
@@ -268,8 +272,9 @@ class MEGABYTE(nn.Module):
 
             if exists(next_h_dim) and next_h_dim != dim:
                 proj = nn.Sequential(
+                    Rearrange('b ... d -> b (...) d'),
                     nn.Linear(h_dim, next_h_dim * next_seq_len),
-                    Rearrange('b m (n d) -> b (m n) d', n = next_seq_len)
+                    Rearrange('b m (n d) -> (b m) n d', n = next_seq_len)
                 )
 
             self.to_next_transformer_projections.append(proj)
@@ -344,17 +349,18 @@ class MEGABYTE(nn.Module):
         tokens_at_stages = []
         pos_embs = default(self.pos_embs, (None,))
 
-        for ind, pos_emb, token_emb in zip_longest(range(len(prec_dims)), reversed(pos_embs), reversed(self.token_embs)):
-            is_last = ind == (len(prec_dims) - 1)
+        for ind, pos_emb, token_emb in zip_longest(range(len(prec_dims)), pos_embs, self.token_embs):
+            is_first = ind == 0
+
             tokens = token_emb(ids)
 
             if exists(pos_emb):
                 positions = pos_emb(torch.arange(tokens.shape[-2], device = device))
                 tokens = tokens + positions
 
-            tokens_at_stages.append(tokens)
+            tokens_at_stages.insert(0, tokens)
 
-            if is_last:
+            if is_first:
                 continue
 
             ids = rearrange(ids, '... m n -> ... (m n)')
