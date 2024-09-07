@@ -1,20 +1,17 @@
-import math
 import functools
+import math
 from itertools import zip_longest
 
 import torch
 import torch.nn.functional as F
-from torch import nn, einsum
-
-from einops import rearrange, reduce, repeat, pack, unpack
-from einops.layers.torch import Rearrange
-
 from beartype import beartype
 from beartype.typing import Tuple, Union
+from einops import pack, rearrange, reduce, repeat, unpack
+from einops.layers.torch import Rearrange
+from torch import einsum, nn
+from tqdm import tqdm
 
 from MEGABYTE_pytorch.attend import Attend
-
-from tqdm import tqdm
 
 # helpers
 
@@ -385,7 +382,7 @@ class MEGABYTE(nn.Module):
             # sum the previous hierarchy's representation
 
             if exists(prev_stage_tokens_repr):
-                prev_stage_tokens_repr = F.pad(prev_stage_tokens_repr, (0, 0, 1, 0), value = 0.)
+                prev_stage_tokens_repr = F.pad(prev_stage_tokens_repr, (0, 0, 1, 0), value = self.pad_id)
                 stage_tokens = stage_tokens + prev_stage_tokens_repr
 
             attended = transformer(stage_tokens)
