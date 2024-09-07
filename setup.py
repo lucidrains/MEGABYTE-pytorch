@@ -1,4 +1,4 @@
-from setuptools import find_packages, setup
+from setuptools import setup, find_packages
 
 setup(
   name = 'MEGABYTE-pytorch',
@@ -18,7 +18,7 @@ setup(
   install_requires=[
     'beartype',
     'einops>=0.6.1',
-    'torch>=2',
+    'torch>=1.10',
     'tqdm'
   ],
   classifiers=[
