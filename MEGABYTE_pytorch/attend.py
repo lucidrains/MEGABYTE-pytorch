@@ -1,16 +1,11 @@
-from collections import namedtuple
 from functools import wraps
-from packaging import version
 
 import torch
-from torch import nn, einsum
 import torch.nn.functional as F
-
 from einops import rearrange
-
-# constants
-
-EfficientAttentionConfig = namedtuple('EfficientAttentionConfig', ['enable_flash', 'enable_math', 'enable_mem_efficient'])
+from packaging import version
+from torch import einsum, nn
+from torch.nn.attention import SDPBackend
 
 # helpers
 
@@ -47,10 +42,8 @@ class Attend(nn.Module):
         self.flash = flash
         assert not (flash and version.parse(torch.__version__) < version.parse('2.0.0')), 'in order to use flash attention, you must be using pytorch 2.0 or above'
 
-        # determine efficient attention configs for cuda and cpu
-
-        self.cpu_config = EfficientAttentionConfig(True, True, True)
-        self.cuda_config = None
+        # default cpu attention configs
+        self.attn_cfg = [SDPBackend.FLASH_ATTENTION, SDPBackend.MATH, SDPBackend.EFFICIENT_ATTENTION]
 
         if not torch.cuda.is_available() or not flash:
             return
@@ -59,10 +52,10 @@ class Attend(nn.Module):
 
         if device_properties.major == 8 and device_properties.minor == 0:
             print_once('A100 GPU detected, using flash attention if input tensor is on cuda')
-            self.cuda_config = EfficientAttentionConfig(True, False, False)
+            self.attn_cfg = [SDPBackend.FLASH_ATTENTION]
         else:
             print_once('Non-A100 GPU detected, using math or mem efficient attention if input tensor is on cuda')
-            self.cuda_config = EfficientAttentionConfig(False, True, True)
+            self.attn_cfg = [SDPBackend.MATH, SDPBackend.EFFICIENT_ATTENTION]
 
     def get_mask(self, i, j, device):
         return torch.ones((i, j), device=device, dtype=torch.bool).triu(j - i + 1)
@@ -85,20 +78,15 @@ class Attend(nn.Module):
             mask = rearrange(mask, 'b j -> b 1 1 j')
             mask = mask.expand(-1, heads, q_len, -1)
 
-        # Check if there is a compatible device for flash attention
-
-        config = self.cuda_config if is_cuda else self.cpu_config
-
         # pytorch 2.0 flash attn: q, k, v, mask, dropout, causal, softmax_scale
 
-        with torch.backends.cuda.sdp_kernel(**config._asdict()):
+        with torch.nn.attention.sdpa_kernel(self.attn_cfg):
             out = F.scaled_dot_product_attention(
                 q, k, v,
                 attn_mask = mask,
                 dropout_p = self.dropout if self.training else 0., 
                 is_causal = self.causal
             )
-
         return out
 
     def forward(self, q, k, v, mask = None):
