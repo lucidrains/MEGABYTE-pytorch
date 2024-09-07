@@ -231,7 +231,7 @@ class MEGABYTE(nn.Module):
         self.max_seq_len = max_seq_len
 
         self.start_tokens = nn.ParameterList([nn.Parameter(torch.randn(h_dim)) for h_dim, seq_len in zip(dim, max_seq_len)])
-        self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, h_dim) for h_dim, seq_len in zip(dim, max_seq_len)]) if pos_emb else None
+        self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, h_dim) for h_dim, seq_len in zip(reversed(dim), reversed(max_seq_len))]) if pos_emb else None
 
         self.token_embs = nn.ModuleList([])
 
@@ -242,10 +242,10 @@ class MEGABYTE(nn.Module):
             patch_size *= seq_len
 
             self.token_embs.append(nn.Sequential(
-                nn.Embedding(num_tokens, fine_dim),
+                nn.Embedding(num_tokens, dim_out),
                 Rearrange('... r d -> ... (r d)'),
-                nn.LayerNorm(patch_size * fine_dim),
-                nn.Linear(patch_size * fine_dim, dim_out),
+                nn.LayerNorm(patch_size * dim_out),
+                nn.Linear(patch_size * dim_out, dim_out),
                 nn.LayerNorm(dim_out)
             ))
 
@@ -346,7 +346,7 @@ class MEGABYTE(nn.Module):
         tokens_at_stages = []
         pos_embs = default(self.pos_embs, (None,))
 
-        for ind, pos_emb, token_emb in zip_longest(range(len(prec_dims)), pos_embs, self.token_embs):
+        for ind, pos_emb, token_emb in zip(range(len(prec_dims)), pos_embs, self.token_embs):
             is_first = ind == 0
 
             tokens = token_emb(ids)
