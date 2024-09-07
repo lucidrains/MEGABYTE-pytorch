@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn import Module, ModuleList
 from torch import nn, einsum
+from torch.amp import autocast
 
 from einops import rearrange, reduce, repeat, pack, unpack
 from einops.layers.torch import Rearrange
@@ -80,6 +81,7 @@ class RotaryEmbedding(Module):
     def device(self):
         return next(self.buffers()).device
 
+    @autocast('cuda', enabled = False)
     def forward(self, seq_len):
         t = torch.arange(seq_len, device = self.device).type_as(self.inv_freq)
         freqs = torch.einsum('i , j -> i j', t, self.inv_freq)
@@ -90,6 +92,7 @@ def rotate_half(x):
     x1, x2 = x.chunk(2, dim=-1)
     return torch.cat((-x2, x1), dim=-1)
 
+@autocast('cuda', enabled = False)
 def apply_rotary_pos_emb(pos, t):
     return t * pos.cos() + rotate_half(t) * pos.sin()
 
