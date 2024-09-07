@@ -1,16 +1,18 @@
+from __future__ import annotations
+
 import math
 import functools
 from itertools import zip_longest
 
 import torch
 import torch.nn.functional as F
+from torch.nn import Module, ModuleList
 from torch import nn, einsum
 
 from einops import rearrange, reduce, repeat, pack, unpack
 from einops.layers.torch import Rearrange
 
 from beartype import beartype
-from beartype.typing import Tuple, Union
 
 from MEGABYTE_pytorch.attend import Attend
 
@@ -68,7 +70,7 @@ def token_shift(t):
 
 # rotary positional embedding
 
-class RotaryEmbedding(nn.Module):
+class RotaryEmbedding(Module):
     def __init__(self, dim, theta = 10000):
         super().__init__()
         inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2).float() / dim))
@@ -93,7 +95,7 @@ def apply_rotary_pos_emb(pos, t):
 
 # norm
 
-class RMSNorm(nn.Module):
+class RMSNorm(Module):
     def __init__(self, dim, eps = 1e-8):
         super().__init__()
         self.scale = dim ** -0.5
@@ -115,7 +117,7 @@ def FeedForward(*, dim, mult = 4, dropout = 0.):
         nn.Linear(dim * mult, dim)
     )
 
-class Attention(nn.Module):
+class Attention(Module):
     def __init__(
         self,
         *,
@@ -157,7 +159,7 @@ class Attention(nn.Module):
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
 
-class Transformer(nn.Module):
+class Transformer(Module):
     def __init__(
         self,
         *,
@@ -173,10 +175,10 @@ class Transformer(nn.Module):
     ):
         super().__init__()
         self.rotary_emb = RotaryEmbedding(dim_head) if rel_pos else None
-        self.layers = nn.ModuleList([])
+        self.layers = ModuleList([])
 
         for _ in range(layers):
-            self.layers.append(nn.ModuleList([
+            self.layers.append(ModuleList([
                 Attention(dim = dim, dim_head = dim_head, heads = heads, dropout = attn_dropout, flash = flash_attn),
                 FeedForward(dim = dim, mult = ff_mult, dropout = ff_dropout)
             ]))
@@ -195,16 +197,16 @@ class Transformer(nn.Module):
 
 # main class
 
-class MEGABYTE(nn.Module):
+class MEGABYTE(Module):
 
     @beartype
     def __init__(
         self,
         *,
         num_tokens,
-        dim: Union[Tuple, int],
-        depth: Tuple,
-        max_seq_len: Tuple,
+        dim: tuple | int,
+        depth: tuple,
+        max_seq_len: tuple,
         dim_head = 64,
         heads = 8,
         attn_dropout = 0.,
@@ -234,9 +236,9 @@ class MEGABYTE(nn.Module):
         self.max_seq_len = max_seq_len
 
         self.start_tokens = nn.ParameterList([nn.Parameter(torch.randn(h_dim)) for h_dim, seq_len in zip(dim, max_seq_len)])
-        self.pos_embs = nn.ModuleList([nn.Embedding(seq_len, h_dim) for h_dim, seq_len in zip(dim, max_seq_len)]) if pos_emb else None
+        self.pos_embs = ModuleList([nn.Embedding(seq_len, h_dim) for h_dim, seq_len in zip(dim, max_seq_len)]) if pos_emb else None
 
-        self.token_embs = nn.ModuleList([])
+        self.token_embs = ModuleList([])
 
         patch_size = 1
         self.token_embs.append(nn.Embedding(num_tokens, fine_dim))
@@ -252,8 +254,8 @@ class MEGABYTE(nn.Module):
                 nn.LayerNorm(dim_out)
             ))
 
-        self.transformers = nn.ModuleList([])
-        self.to_next_transformer_projections = nn.ModuleList([])
+        self.transformers = ModuleList([])
+        self.to_next_transformer_projections = ModuleList([])
 
         for h_dim, next_h_dim, stage_depth, next_seq_len in zip_longest(dim, dim[1:], depth, max_seq_len[1:]):
             self.transformers.append(Transformer(
@@ -346,10 +348,12 @@ class MEGABYTE(nn.Module):
         # get tokens for all hierarchical stages, reducing by appropriate dimensions
         # and adding the absolute positional embeddings
 
-        tokens_at_stages = []
-        pos_embs = default(self.pos_embs, (None,))
+        num_stages = len(prec_dims)
 
-        for ind, pos_emb, token_emb in zip_longest(range(len(prec_dims)), pos_embs, self.token_embs):
+        tokens_at_stages = []
+        pos_embs = default(self.pos_embs, (None,) * num_stages)
+
+        for ind, pos_emb, token_emb in zip_longest(range(num_stages), reversed(pos_embs), self.token_embs):
             is_first = ind == 0
 
             tokens = token_emb(ids)
@@ -385,7 +389,7 @@ class MEGABYTE(nn.Module):
             # sum the previous hierarchy's representation
 
             if exists(prev_stage_tokens_repr):
-                prev_stage_tokens_repr = F.pad(prev_stage_tokens_repr, (0, 0, 1, 0), value = 0.)
+                prev_stage_tokens_repr = F.pad(prev_stage_tokens_repr, (0, 0, 1, 0), value = self.pad_id)
                 stage_tokens = stage_tokens + prev_stage_tokens_repr
 
             attended = transformer(stage_tokens)
