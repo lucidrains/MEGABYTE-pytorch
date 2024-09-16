@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'MEGABYTE-pytorch',
   packages = find_packages(),
-  version = '0.3.4',
+  version = '0.3.5',
   license='MIT',
   description = 'MEGABYTE - Pytorch',
   long_description_content_type = 'text/markdown',

@@ -234,7 +234,7 @@ class MEGABYTE(Module):
 
         assert len(dim) == self.stages
 
-        coarsest_dim, *_, fine_dim = dim
+        *_, fine_dim = dim
 
         self.max_seq_len = max_seq_len
 
